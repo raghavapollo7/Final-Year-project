@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+
+# Downloaded/trained model weights can be large.
+*.pt
+*.onnx
+*.engine
+
+# Runtime outputs and local datasets.
+outputs/*
+!outputs/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/underwater_dataset/
+data/rubble_dataset/
+runs/
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

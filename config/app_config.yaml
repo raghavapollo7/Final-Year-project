@@ -1,0 +1,16 @@
+model:
+  default_weights: yolov8n.pt
+  underwater_weights: models/underwater_best.pt
+  rubble_weights: models/rubble_best.pt
+  confidence: 0.35
+  iou: 0.45
+
+dashboard:
+  default_mode: underwater
+  alert_confidence: 0.50
+  heatmap_decay: 0.92
+
+gps:
+  enabled: true
+  default_latitude: 12.9716
+  default_longitude: 77.5946
