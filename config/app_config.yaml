@@ -1,5 +1,5 @@
 model:
-  default_weights: yolov8n.pt
+  default_weights: yolov8s.pt
   underwater_weights: models/underwater_best.pt
   rubble_weights: models/rubble_best.pt
   confidence: 0.35

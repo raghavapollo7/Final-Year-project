@@ -52,8 +52,10 @@ def main():
         mode = st.radio("Detection mode", ["underwater", "rubble"], format_func=str.title)
         source = st.text_input("Camera/video source", value="0")
         uploaded_image = st.file_uploader("Demo image", type=["jpg", "jpeg", "png"])
-        confidence = st.slider("Detection confidence", 0.10, 0.90, float(config["model"]["confidence"]), 0.05)
-        alert_confidence = st.slider("Alert threshold", 0.20, 0.95, float(config["dashboard"]["alert_confidence"]), 0.05)
+        default_confidence = 0.20 if mode == "underwater" else float(config["model"]["confidence"])
+        default_alert = 0.25 if mode == "underwater" else float(config["dashboard"]["alert_confidence"])
+        confidence = st.slider("Detection confidence", 0.05, 0.90, default_confidence, 0.05)
+        alert_confidence = st.slider("Alert threshold", 0.05, 0.95, default_alert, 0.05)
         preprocess_enabled = st.toggle("Preprocess video", value=True)
         thermal_enabled = st.toggle("Thermal simulation", value=(mode == "rubble"), disabled=(mode != "rubble"))
         heatmap_enabled = st.toggle("Heatmap overlay", value=True)
@@ -81,6 +83,11 @@ def main():
     detection_table_slot = side_panel.empty()
 
     st.info(f"Active weights: {weights}")
+    if mode == "underwater":
+        st.warning(
+            "Underwater diver detection is difficult with a generic COCO model. "
+            "For demo, keep detection confidence near 0.15-0.25 and try preprocessing both ON and OFF."
+        )
 
     if uploaded_image is not None:
         file_bytes = np.asarray(bytearray(uploaded_image.read()), dtype=np.uint8)
