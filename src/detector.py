@@ -58,15 +58,22 @@ class RescueDetector:
 
     @staticmethod
     def _draw_detection(frame: np.ndarray, x1: int, y1: int, x2: int, y2: int, conf: float) -> None:
+        height, width = frame.shape[:2]
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(width - 1, x2), min(height - 1, y2)
         color = (0, 255, 80) if conf >= 0.5 else (0, 180, 255)
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-        label = f"Human detected {conf * 100:.1f}%"
-        label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+
+        label = f"Human {conf * 100:.1f}%"
+        font_scale = max(0.38, min(0.55, width / 1500))
+        thickness = 1 if width < 900 else 2
+        label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+        label_width = min(label_size[0] + 8, width - x1)
         label_y = max(y1, label_size[1] + 10)
         cv2.rectangle(
             frame,
             (x1, label_y - label_size[1] - 10),
-            (x1 + label_size[0] + 8, label_y + 4),
+            (x1 + label_width, label_y + 4),
             color,
             -1,
         )
@@ -75,8 +82,8 @@ class RescueDetector:
             label,
             (x1 + 4, label_y - 4),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
+            font_scale,
             (0, 0, 0),
-            2,
+            thickness,
             cv2.LINE_AA,
         )

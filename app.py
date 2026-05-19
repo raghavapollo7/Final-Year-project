@@ -8,7 +8,7 @@ from src.alerts import build_alert_message
 from src.detector import RescueDetector
 from src.gps import get_demo_gps
 from src.heatmap import DetectionHeatmap
-from src.preprocessing import preprocess_rubble, preprocess_underwater
+from src.preprocessing import preprocess_rubble, preprocess_underwater, simulate_thermal
 from src.utils import bgr_to_rgb, ensure_output_dirs, load_yaml, open_video_source
 
 
@@ -21,14 +21,19 @@ def load_detector(weights: str, confidence: float, iou: float):
 
 
 def process_frame(frame, mode, preprocess_enabled, thermal_enabled, detector, heatmap, heatmap_enabled):
-    processed = frame
-    if preprocess_enabled:
-        if mode == "underwater":
-            processed = preprocess_underwater(frame)
-        else:
-            processed = preprocess_rubble(frame, thermal=thermal_enabled)
+    if mode == "underwater":
+        detection_frame = preprocess_underwater(frame) if preprocess_enabled else frame
+        display_frame = detection_frame
+    else:
+        detection_frame = preprocess_rubble(frame, thermal=False) if preprocess_enabled else frame
+        display_frame = simulate_thermal(detection_frame) if thermal_enabled else detection_frame
 
-    annotated, detections = detector.detect(processed)
+    _, detections = detector.detect(detection_frame)
+    annotated = display_frame.copy()
+    for detection in detections:
+        x1, y1, x2, y2 = detection["bbox"]
+        RescueDetector._draw_detection(annotated, x1, y1, x2, y2, detection["confidence"])
+
     if heatmap_enabled:
         heat = heatmap.update(annotated.shape, detections)
         annotated = heatmap.overlay(annotated, heat)
@@ -89,14 +94,19 @@ def main():
         )
         high_conf_detections = [item for item in detections if item["confidence"] >= alert_confidence]
         metric_a.metric("Mode", mode.title())
-        metric_b.metric("Victims now", len(high_conf_detections))
-        metric_c.metric("Max count", len(high_conf_detections))
+        metric_b.metric("Victims now", len(detections))
+        metric_c.metric("Alert-level", len(high_conf_detections))
         metric_d.metric("Input", "Image")
 
         if high_conf_detections:
             alert_slot.error(build_alert_message(mode, high_conf_detections, gps))
+        elif detections:
+            alert_slot.warning(
+                f"Potential victim detected: {len(detections)} candidate(s), "
+                f"best confidence {max(item['confidence'] for item in detections) * 100:.1f}%."
+            )
         else:
-            alert_slot.success("No high-confidence victim detected in this image.")
+            alert_slot.success("No victim candidate detected in this image.")
 
         telemetry_slot.json(
             {
@@ -142,18 +152,23 @@ def main():
             frame, mode, preprocess_enabled, thermal_enabled, detector, heatmap, heatmap_enabled
         )
         high_conf_detections = [item for item in detections if item["confidence"] >= alert_confidence]
-        total_victims = max(total_victims, len(high_conf_detections))
+        total_victims = max(total_victims, len(detections))
 
         fps = frame_count / max(time.time() - started_at, 1e-6)
         metric_a.metric("Mode", mode.title())
-        metric_b.metric("Victims now", len(high_conf_detections))
+        metric_b.metric("Victims now", len(detections))
         metric_c.metric("Max count", total_victims)
         metric_d.metric("FPS", f"{fps:.1f}")
 
         if high_conf_detections:
             alert_slot.error(build_alert_message(mode, high_conf_detections, gps))
+        elif detections:
+            alert_slot.warning(
+                f"Potential victim detected: {len(detections)} candidate(s), "
+                f"best confidence {max(item['confidence'] for item in detections) * 100:.1f}%."
+            )
         else:
-            alert_slot.success("Scanning area. No high-confidence victim detected.")
+            alert_slot.success("Scanning area. No victim candidate detected.")
 
         telemetry_slot.json(
             {
