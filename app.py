@@ -1,6 +1,7 @@
 import time
 
 import cv2
+import numpy as np
 import streamlit as st
 
 from src.alerts import build_alert_message
@@ -19,6 +20,21 @@ def load_detector(weights: str, confidence: float, iou: float):
     return RescueDetector(weights=weights, confidence=confidence, iou=iou)
 
 
+def process_frame(frame, mode, preprocess_enabled, thermal_enabled, detector, heatmap, heatmap_enabled):
+    processed = frame
+    if preprocess_enabled:
+        if mode == "underwater":
+            processed = preprocess_underwater(frame)
+        else:
+            processed = preprocess_rubble(frame, thermal=thermal_enabled)
+
+    annotated, detections = detector.detect(processed)
+    if heatmap_enabled:
+        heat = heatmap.update(annotated.shape, detections)
+        annotated = heatmap.overlay(annotated, heat)
+    return annotated, detections
+
+
 def main():
     ensure_output_dirs()
     config = load_yaml("config/app_config.yaml")
@@ -30,6 +46,7 @@ def main():
         st.header("Mission Control")
         mode = st.radio("Detection mode", ["underwater", "rubble"], format_func=str.title)
         source = st.text_input("Camera/video source", value="0")
+        uploaded_image = st.file_uploader("Demo image", type=["jpg", "jpeg", "png"])
         confidence = st.slider("Detection confidence", 0.10, 0.90, float(config["model"]["confidence"]), 0.05)
         alert_confidence = st.slider("Alert threshold", 0.20, 0.95, float(config["dashboard"]["alert_confidence"]), 0.05)
         preprocess_enabled = st.toggle("Preprocess video", value=True)
@@ -60,6 +77,41 @@ def main():
 
     st.info(f"Active weights: {weights}")
 
+    if uploaded_image is not None:
+        file_bytes = np.asarray(bytearray(uploaded_image.read()), dtype=np.uint8)
+        frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if frame is None:
+            st.error("Could not read uploaded image.")
+            return
+
+        annotated, detections = process_frame(
+            frame, mode, preprocess_enabled, thermal_enabled, detector, heatmap, heatmap_enabled
+        )
+        high_conf_detections = [item for item in detections if item["confidence"] >= alert_confidence]
+        metric_a.metric("Mode", mode.title())
+        metric_b.metric("Victims now", len(high_conf_detections))
+        metric_c.metric("Max count", len(high_conf_detections))
+        metric_d.metric("Input", "Image")
+
+        if high_conf_detections:
+            alert_slot.error(build_alert_message(mode, high_conf_detections, gps))
+        else:
+            alert_slot.success("No high-confidence victim detected in this image.")
+
+        telemetry_slot.json(
+            {
+                "mode": mode,
+                "source": uploaded_image.name,
+                "gps": gps,
+                "preprocessing": preprocess_enabled,
+                "thermal_simulation": thermal_enabled if mode == "rubble" else False,
+                "all_detections": len(detections),
+            }
+        )
+        detection_table_slot.dataframe(detections, use_container_width=True)
+        video_slot.image(bgr_to_rgb(annotated), channels="RGB", use_column_width=True)
+        return
+
     if stop:
         st.session_state["running"] = False
     if start:
@@ -86,20 +138,11 @@ def main():
             break
 
         frame_count += 1
-        processed = frame
-        if preprocess_enabled:
-            if mode == "underwater":
-                processed = preprocess_underwater(frame)
-            else:
-                processed = preprocess_rubble(frame, thermal=thermal_enabled)
-
-        annotated, detections = detector.detect(processed)
+        annotated, detections = process_frame(
+            frame, mode, preprocess_enabled, thermal_enabled, detector, heatmap, heatmap_enabled
+        )
         high_conf_detections = [item for item in detections if item["confidence"] >= alert_confidence]
         total_victims = max(total_victims, len(high_conf_detections))
-
-        if heatmap_enabled:
-            heat = heatmap.update(annotated.shape, detections)
-            annotated = heatmap.overlay(annotated, heat)
 
         fps = frame_count / max(time.time() - started_at, 1e-6)
         metric_a.metric("Mode", mode.title())
